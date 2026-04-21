@@ -781,23 +781,33 @@
         let usedImageIndices = new Set(); // index yang sudah dipakai (untuk random tanpa repeat)
         const folderImageManifest = {
             'one-person': [
-                'images/one-person/photo1.jpg',
-                'images/one-person/photo2.jpeg',
-                'images/one-person/photo3.jpeg',
-                'images/one-person/photo4.jpeg',
-                'images/one-person/photo5.jpeg',
-                'images/one-person/photo6.jpeg',
-                'images/one-person/photo7.jpeg'
+                'images/one-person/photo1.webp',
+                'images/one-person/photo2.webp',
+                'images/one-person/photo3.webp',
+                'images/one-person/photo4.webp',
+                'images/one-person/photo5.webp',
+                'images/one-person/photo6.webp',
+                'images/one-person/photo7.webp'
             ],
             'duo-person': [
-                'images/duo-person/photo1.jpeg',
-                'images/duo-person/photo2.jpeg',
-                'images/duo-person/photo3.jpeg',
-                'images/duo-person/photo4.jpeg',
-                'images/duo-person/phoyo5.jpeg'
+                'images/duo-person/photo1.webp',
+                'images/duo-person/photo2.webp',
+                'images/duo-person/photo3.webp',
+                'images/duo-person/photo4.webp',
+                'images/duo-person/phoyo5.webp'
             ],
-            'trio-person': [],
-            'group-person': []
+            'trio-person': [
+                'images/trio-person/photo-1.webp',
+                'images/trio-person/photo2.webp',
+                'images/trio-person/photo3.webp',
+                'images/trio-person/photo4.webp'
+            ],
+            'group-person': [
+                'images/group-person/photo1.webp',
+                'images/group-person/photo2.webp',
+                'images/group-person/photo3.webp',
+                'images/group-person/photo4.webp'
+            ]
         };
 
         // Elemen DOM
@@ -854,7 +864,7 @@
             // Karena browser tidak bisa membaca direktori secara langsung,
             // kita coba load gambar dengan pola nama umum.
             // User perlu menamai file: photo1.jpg, photo2.jpg, photo3.png, dst.
-            const extensions = ['jpg', 'jpeg', 'png', 'JPG', 'JPEG', 'PNG'];
+            const extensions = ['webp', 'jpg', 'jpeg', 'png', 'WEBP', 'JPG', 'JPEG', 'PNG'];
             const paths = [];
             // Fallback dibatasi agar tidak membebani browser.
             for (let i = 1; i <= 12; i++) {
