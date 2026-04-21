@@ -32,6 +32,10 @@
             min-height: 100vh;
             overflow-x: hidden;
         }
+        body.effects-lite .bg-atmosphere,
+        body.effects-lite .noise-overlay {
+            display: none;
+        }
 
         /* === LATAR BELAKANG ATMOSFERIK === */
         .bg-atmosphere {
@@ -118,6 +122,15 @@
         .glass-card:hover {
             border-color: rgba(255,255,255,0.12);
         }
+        body.effects-lite .glass-card,
+        body.effects-lite .cam-status,
+        body.effects-lite .result-item .shot-badge,
+        body.effects-lite .result-item .dl-btn,
+        body.effects-lite .custom-toast,
+        body.effects-lite .lightbox {
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+        }
 
         /* === PILIHAN PERSON === */
         .person-option {
@@ -194,6 +207,9 @@
             height: 100%;
             object-fit: cover;
             display: block;
+            /* Counter browser/device selfie mirroring so preview feels natural. */
+            transform: scaleX(-1);
+            transform-origin: center;
         }
         .camera-wrapper .cam-overlay {
             position: absolute;
@@ -403,6 +419,8 @@
             animation: fadeSlideIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
             opacity: 0;
             transform: translateY(20px);
+            contain: content;
+            content-visibility: auto;
         }
         @keyframes fadeSlideIn {
             to { opacity: 1; transform: translateY(0); }
@@ -590,6 +608,10 @@
             .camera-wrapper {
                 aspect-ratio: 3/4;
             }
+            .glass-card {
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
+            }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -684,14 +706,6 @@
                         </div>
                     </div>
 
-                    <!-- Info Gambar -->
-                    <div class="glass-card mb-3" id="imageInfo">
-                        <div class="section-label"><i class="fas fa-images me-1"></i> Ketersediaan Gambar</div>
-                        <p style="font-size:0.85rem; color:var(--fg-muted); margin:0;" id="imageCountText">
-                            Memuat...
-                        </p>
-                    </div>
-
                     <!-- Tombol Aksi -->
                     <div class="d-flex flex-column gap-2">
                         <button class="btn-shoot w-100" id="btnShoot" disabled>
@@ -764,7 +778,27 @@
         let cameraStream = null;
         let availableImages = []; // daftar path gambar di folder terpilih
         let resultImages = [];   // gambar yang sudah "difoto"
-        let usedImageIndices = []; // index yang sudah dipakai (untuk random tanpa repeat)
+        let usedImageIndices = new Set(); // index yang sudah dipakai (untuk random tanpa repeat)
+        const folderImageManifest = {
+            'one-person': [
+                'images/one-person/photo1.jpg',
+                'images/one-person/photo2.jpeg',
+                'images/one-person/photo3.jpeg',
+                'images/one-person/photo4.jpeg',
+                'images/one-person/photo5.jpeg',
+                'images/one-person/photo6.jpeg',
+                'images/one-person/photo7.jpeg'
+            ],
+            'duo-person': [
+                'images/duo-person/photo1.jpeg',
+                'images/duo-person/photo2.jpeg',
+                'images/duo-person/photo3.jpeg',
+                'images/duo-person/photo4.jpeg',
+                'images/duo-person/phoyo5.jpeg'
+            ],
+            'trio-person': [],
+            'group-person': []
+        };
 
         // Elemen DOM
         const video = document.getElementById('camVideo');
@@ -780,7 +814,6 @@
         const shootBar = document.getElementById('shootBar');
         const resultContainer = document.getElementById('resultContainer');
         const resultCountEl = document.getElementById('resultCount');
-        const imageCountText = document.getElementById('imageCountText');
 
         // ============================
         // INISIALISASI KAMERA
@@ -788,18 +821,24 @@
         async function initCamera() {
             try {
                 cameraStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 960 } },
+                    video: {
+                        facingMode: 'user',
+                        width: { ideal: 960, max: 1280 },
+                        height: { ideal: 720, max: 960 },
+                        frameRate: { ideal: 24, max: 30 }
+                    },
                     audio: false
                 });
                 video.srcObject = cameraStream;
                 camPlaceholder.style.display = 'none';
                 camStatus.classList.add('live');
                 camStatus.querySelector('span').textContent = 'Live';
-                btnShoot.disabled = false;
+                updateImageInfo();
                 showToast('Kamera aktif dan siap digunakan');
             } catch (err) {
                 console.error('Gagal akses kamera:', err);
                 camPlaceholder.querySelector('span').textContent = 'Gagal mengakses kamera';
+                updateImageInfo();
                 showToast('Tidak bisa mengakses kamera. Pastikan izin diberikan.');
             }
         }
@@ -808,13 +847,17 @@
         // LOAD GAMBAR DARI FOLDER
         // ============================
         function getImagePathsFromFolder(folder) {
+            if (folderImageManifest[folder]) {
+                return [...folderImageManifest[folder]];
+            }
+
             // Karena browser tidak bisa membaca direktori secara langsung,
             // kita coba load gambar dengan pola nama umum.
             // User perlu menamai file: photo1.jpg, photo2.jpg, photo3.png, dst.
             const extensions = ['jpg', 'jpeg', 'png', 'JPG', 'JPEG', 'PNG'];
             const paths = [];
-            // Coba sampai 50 file
-            for (let i = 1; i <= 50; i++) {
+            // Fallback dibatasi agar tidak membebani browser.
+            for (let i = 1; i <= 12; i++) {
                 for (const ext of extensions) {
                     paths.push(`images/${folder}/photo${i}.${ext}`);
                 }
@@ -826,11 +869,18 @@
         async function checkAvailableImages(folder) {
             const candidates = getImagePathsFromFolder(folder);
             availableImages = [];
-            usedImageIndices = [];
+            usedImageIndices = new Set();
+
+            if (folderImageManifest[folder]) {
+                availableImages = candidates;
+                updateImageInfo();
+                return availableImages.length;
+            }
 
             const checks = candidates.map((path, idx) => {
                 return new Promise((resolve) => {
                     const img = new Image();
+                    img.decoding = 'async';
                     img.onload = () => resolve({ path, exist: true, idx });
                     img.onerror = () => resolve({ path, exist: false, idx });
                     img.src = path;
@@ -847,10 +897,15 @@
         }
 
         function updateImageInfo() {
-            if (availableImages.length > 0) {
-                imageCountText.innerHTML = `<span style="color:var(--success)"><i class="fas fa-check-circle me-1"></i>${availableImages.length} gambar ditemukan</span> di folder <strong>images/${selectedFolder}/</strong>`;
+            btnShoot.disabled = availableImages.length === 0 || !cameraStream;
+        }
+
+        function scheduleCameraInit() {
+            const run = () => initCamera();
+            if ('requestIdleCallback' in window) {
+                window.requestIdleCallback(run, { timeout: 1200 });
             } else {
-                imageCountText.innerHTML = `<span style="color:var(--danger)"><i class="fas fa-exclamation-triangle me-1"></i>Belum ada gambar</span> di folder <strong>images/${selectedFolder}/</strong><br><small style="color:var(--fg-muted)">Taruh file: photo1.jpg, photo2.png, dst.</small>`;
+                setTimeout(run, 150);
             }
         }
 
@@ -903,7 +958,7 @@
             shootProgress.classList.add('active');
             shootBar.style.width = '0%';
             resultImages = [];
-            usedImageIndices = [];
+            usedImageIndices = new Set();
 
             for (let i = 0; i < shotTotal; i++) {
                 // Hitung mundur 3 detik
@@ -945,11 +1000,11 @@
             // Ambil index yang belum dipakai
             const available = [];
             for (let i = 0; i < availableImages.length; i++) {
-                if (!usedImageIndices.includes(i)) available.push(i);
+                if (!usedImageIndices.has(i)) available.push(i);
             }
             if (available.length === 0) return availableImages[0];
             const pick = available[Math.floor(Math.random() * available.length)];
-            usedImageIndices.push(pick);
+            usedImageIndices.add(pick);
             return availableImages[pick];
         }
 
@@ -1007,21 +1062,45 @@
             }
 
             resultCountEl.textContent = `${resultImages.length} foto`;
-            let html = '<div class="result-gallery">';
+            resultContainer.innerHTML = '';
+
+            const gallery = document.createElement('div');
+            gallery.className = 'result-gallery';
+
             resultImages.forEach((src, i) => {
-                html += `
-                    <div class="result-item" style="animation-delay: ${i * 0.12}s">
-                        <img src="${src}" alt="Foto ${i + 1}" loading="lazy"
-                             onclick="openLightbox('${src}')"
-                             onerror="this.parentElement.innerHTML='<div style=\\'display:flex;align-items:center;justify-content:center;height:100%;color:var(--fg-muted);font-size:0.75rem;\\'>Gambar tidak ditemukan</div>'">
-                        <span class="shot-badge">Shot ${i + 1}</span>
-                        <a href="${src}" download class="dl-btn" title="Download" aria-label="Download foto">
-                            <i class="fas fa-download"></i>
-                        </a>
-                    </div>`;
+                const item = document.createElement('div');
+                item.className = 'result-item';
+                item.style.animationDelay = `${i * 0.12}s`;
+
+                const img = document.createElement('img');
+                img.src = src;
+                img.alt = `Foto ${i + 1}`;
+                img.loading = 'lazy';
+                img.decoding = 'async';
+                img.addEventListener('click', () => openLightbox(src));
+                img.addEventListener('error', () => {
+                    item.innerHTML = "<div style='display:flex;align-items:center;justify-content:center;height:100%;color:var(--fg-muted);font-size:0.75rem;'>Gambar tidak ditemukan</div>";
+                });
+
+                const badge = document.createElement('span');
+                badge.className = 'shot-badge';
+                badge.textContent = `Shot ${i + 1}`;
+
+                const download = document.createElement('a');
+                download.href = src;
+                download.download = '';
+                download.className = 'dl-btn';
+                download.title = 'Download';
+                download.setAttribute('aria-label', 'Download foto');
+                download.innerHTML = '<i class="fas fa-download"></i>';
+
+                item.appendChild(img);
+                item.appendChild(badge);
+                item.appendChild(download);
+                gallery.appendChild(item);
             });
-            html += '</div>';
-            resultContainer.innerHTML = html;
+
+            resultContainer.appendChild(gallery);
         }
 
         // ============================
@@ -1030,7 +1109,7 @@
         btnReset.addEventListener('click', () => {
             if (isShooting) return;
             resultImages = [];
-            usedImageIndices = [];
+            usedImageIndices = new Set();
             renderResults();
             showToast('Hasil foto direset');
         });
@@ -1072,12 +1151,23 @@
             }, 3000);
         }
 
+        function shouldUseLiteEffects() {
+            const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            const lowMemory = typeof navigator.deviceMemory === 'number' && navigator.deviceMemory <= 4;
+            const lowCpu = typeof navigator.hardwareConcurrency === 'number' && navigator.hardwareConcurrency <= 4;
+            const smallScreen = window.innerWidth <= 768;
+            return reducedMotion || lowMemory || lowCpu || smallScreen;
+        }
+
         // ============================
         // MULAI
         // ============================
         (async function init() {
+            if (shouldUseLiteEffects()) {
+                document.body.classList.add('effects-lite');
+            }
             await checkAvailableImages(selectedFolder);
-            await initCamera();
+            scheduleCameraInit();
         })();
     </script>
 </body>
